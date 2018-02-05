@@ -26,6 +26,7 @@ import stat
 # 64  : no errors - napatech 3GD should be running
 MLX_EXIT_CODE = 32
 NTACC_EXIT_CODE = 64
+BNXT_EXIT_CODE = 128
 class VFIOBindErr(Exception): pass
 
 PATH_ARR = os.getenv('PATH', '').split(':')
@@ -619,6 +620,7 @@ Other network devices
         if_list = list(map(self.pci_name_to_full_name, if_list))
 
 
+        Broadcom_cnt=0;
         # check how many mellanox cards we have
         Mellanox_cnt=0;
         for key in if_list:
@@ -633,6 +635,9 @@ Other network devices
 
             if 'Mellanox' in self.m_devices[key]['Vendor_str']:
                 Mellanox_cnt += 1
+            if 'Broadcom' in self.m_devices[key]['Vendor_str']:
+                Broadcom_cnt += 1
+
 
 
         if not (map_driver.parent_args and map_driver.parent_args.dump_interfaces):
@@ -739,6 +744,8 @@ Other network devices
             return MLX_EXIT_CODE
         elif Napatech_cnt:
             return NTACC_EXIT_CODE
+        elif Broadcom_cnt:
+            return BNXT_EXIT_CODE
 
 
     def do_return_to_linux(self):
@@ -776,6 +783,7 @@ Other network devices
             'net_vmxnet3': 'vmxnet3',
             'net_virtio': 'virtio-pci',
             'net_enic': 'enic',
+            'net_bnxt': 'bnxt_en',
         }
         nics_info = dpdk_nic_bind.get_info_from_trex(dpdk_interfaces)
         if not nics_info:
