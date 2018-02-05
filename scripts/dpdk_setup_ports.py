@@ -619,6 +619,7 @@ Other network devices
         if_list = list(map(self.pci_name_to_full_name, if_list))
 
 
+        Broadcom_cnt=0;
         # check how many mellanox cards we have
         Mellanox_cnt=0;
         for key in if_list:
@@ -633,6 +634,9 @@ Other network devices
 
             if 'Mellanox' in self.m_devices[key]['Vendor_str']:
                 Mellanox_cnt += 1
+            if 'Broadcom' in self.m_devices[key]['Vendor_str']:
+                Broadcom_cnt += 1
+
 
 
         if not (map_driver.parent_args and map_driver.parent_args.dump_interfaces):
@@ -776,6 +780,7 @@ Other network devices
             'net_vmxnet3': 'vmxnet3',
             'net_virtio': 'virtio-pci',
             'net_enic': 'enic',
+            'net_bnxt': 'bnxt_en',
         }
         nics_info = dpdk_nic_bind.get_info_from_trex(dpdk_interfaces)
         if not nics_info:
