@@ -118,6 +118,7 @@ def options(opt):
     opt.add_option('--no-mlx', dest='no_mlx', default=False, action='store_true', help="don't use mlx5 dpdk driver. use with ./b configure --no-mlx. no need to run build with it")
     opt.add_option('--with-ntacc', dest='with_ntacc', default=False, action='store_true', help="Use Napatech dpdk driver. Use with ./b configure --with-ntacc.")
     opt.add_option('--no-ver', action = 'store_true', help = "Don't update version file.")
+    opt.add_option('--no-bnxt', dest='no_bnxt', default=False, action='store_true', help="don't use bnxt dpdk driver. use with ./b configure --no-bnxt. no need to run build with it")
     opt.add_option('--private', dest='private', action = 'store_true', help = "private publish, do not replace latest/be_latest image with this image")
 
     co = opt.option_groups['configure options']
@@ -240,6 +241,7 @@ def configure(conf):
     conf.find_program('ldd')
     conf.check_cxx(lib = 'z', errmsg = missing_pkg_msg(fedora = 'zlib-devel', ubuntu = 'zlib1g-dev'))
     no_mlx          = conf.options.no_mlx
+    no_bnxt          = conf.options.no_bnxt
     with_ntacc      = conf.options.with_ntacc
     with_sanitized  = conf.options.sanitized
     
@@ -254,6 +256,10 @@ def configure(conf):
         else:
             Logs.pprint('YELLOW', 'Warning: will use internal version of ibverbs. If you need to use Mellanox NICs, install OFED:\n' +
                                   'https://trex-tgn.cisco.com/trex/doc/trex_manual.html#_mellanox_connectx_4_support')
+
+    conf.env.NO_BNXT = no_bnxt
+    if not no_bnxt:
+            Logs.pprint('YELLOW', 'Building bnxt PMD')
 
     conf.env.WITH_NTACC = with_ntacc
     if with_ntacc:
@@ -566,6 +572,22 @@ dpdk_src = SrcGroup(dir='src/dpdk/',
 
 
                  # drivers
+		 #bnxt
+                 'drivers/net/bnxt/bnxt_cpr.c',
+                 'drivers/net/bnxt/bnxt_ethdev.c',
+                 'drivers/net/bnxt/bnxt_filter.c',
+                 'drivers/net/bnxt/bnxt_hwrm.c',
+                 'drivers/net/bnxt/bnxt_irq.c',
+                 'drivers/net/bnxt/bnxt_ring.c',
+                 'drivers/net/bnxt/bnxt_rxq.c',
+                 'drivers/net/bnxt/bnxt_rxr.c',
+                 'drivers/net/bnxt/bnxt_stats.c',
+                 'drivers/net/bnxt/bnxt_txq.c',
+                 'drivers/net/bnxt/bnxt_txr.c',
+                 'drivers/net/bnxt/bnxt_vnic.c',
+                 'drivers/net/bnxt/rte_pmd_bnxt.c',
+
+		 #e1000
                  'drivers/net/e1000/base/e1000_80003es2lan.c',
                  'drivers/net/e1000/base/e1000_82540.c',
                  'drivers/net/e1000/base/e1000_82541.c',
@@ -762,6 +784,24 @@ mlx4_dpdk_src = SrcGroup(dir='src/dpdk/',
                  'drivers/net/mlx4/mlx4_utils.c',
             ]);
 
+bnxt_dpdk_src = SrcGroup(dir='src/dpdk/',
+                src_list=[
+
+                 'drivers/net/bnxt/bnxt_cpr.c',
+                 'drivers/net/bnxt/bnxt_ethdev.c',
+                 'drivers/net/bnxt/bnxt_filter.c',
+                 'drivers/net/bnxt/bnxt_hwrm.c',
+                 'drivers/net/bnxt/bnxt_irq.c',
+                 'drivers/net/bnxt/bnxt_ring.c',
+                 'drivers/net/bnxt/bnxt_rxq.c',
+                 'drivers/net/bnxt/bnxt_rxr.c',
+                 'drivers/net/bnxt/bnxt_stats.c',
+                 'drivers/net/bnxt/bnxt_txq.c',
+                 'drivers/net/bnxt/bnxt_txr.c',
+                 'drivers/net/bnxt/bnxt_vnic.c',
+                 'drivers/net/bnxt/rte_pmd_bnxt.c',
+            ]);
+
 bp_dpdk =SrcGroups([
                 dpdk_src
                 ]);
@@ -780,6 +820,10 @@ mlx4_dpdk =SrcGroups([
 bpf = SrcGroups([
                 bpf_src,
                 bpfjit_src]);
+
+bnxt_dpdk = SrcGroups([
+                bnxt_dpdk_src,
+                ]);
 
 # this is the library dp going to falcon (and maybe other platforms)
 bp =SrcGroups([
@@ -869,6 +913,7 @@ dpdk_includes_path =''' ../src/
                         ../src/dpdk/drivers/net/virtio/virtio_user/
                         ../src/dpdk/drivers/net/vmxnet3/
                         ../src/dpdk/drivers/net/vmxnet3/base
+                        ../src/dpdk/drivers/net/bnxt/
                         ../src/dpdk/lib/
                         ../src/dpdk/lib/librte_cfgfile/
                         ../src/dpdk/lib/librte_compat/
@@ -1028,6 +1073,12 @@ class build_option:
     def get_bpfso_target (self):
         return self.update_executable_name("libbpf") + '.so';
 
+    def get_bnxt_target (self):
+        return self.update_executable_name("bnxt");
+
+    def get_bnxtso_target (self):
+        return self.update_executable_name("libbnxt")+'.so';
+
      
     def get_mlx5_flags(self):
         flags=[]
@@ -1038,6 +1089,14 @@ class build_option:
         return (flags)
 
     def get_mlx4_flags(self):
+        flags=[]
+        if self.isRelease () :
+            flags += ['-DNDEBUG'];
+        else:
+            flags += ['-UNDEBUG'];
+        return (flags)
+
+    def get_bnxt_flags(self):
         flags=[]
         if self.isRelease () :
             flags += ['-DNDEBUG'];
@@ -1195,6 +1254,16 @@ def build_prog (bld, build_obj):
                 rpath = rpath_linkage,
                 target = build_obj.get_target())
 
+    if bld.env.NO_BNXT == False:
+        bld.shlib(
+          features='c',
+          includes = dpdk_includes_path,
+          cflags   = (cflags + DPDK_FLAGS + build_obj.get_bnxt_flags() ),
+          use =['bnxt'],
+          source   = bnxt_dpdk.file_list(top),
+          target   = build_obj.get_bnxt_target()
+        )
+
 
 
 def build_type(bld,build_obj):
@@ -1296,6 +1365,11 @@ def install_single_system (bld, exec_p, build_obj):
     # BPF
     do_create_link(src   = os.path.realpath(o + build_obj.get_bpfso_target()),
                    name  = build_obj.get_bpfso_target(),
+                   where = so_path)
+
+    # BNXT
+    do_create_link(src = os.path.realpath(o + build_obj.get_bnxtso_target()),
+                   name = build_obj.get_bnxtso_target(),
                    where = so_path)
 
 

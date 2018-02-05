@@ -144,6 +144,7 @@ static char g_ntacc_so_id_str[50];
 static char g_mlx5_so_id_str[50];
 static char g_mlx4_so_id_str[50];
 static char g_image_postfix[10];
+static char g_bnxt_so_id_str[50];
 static CPciPorts port_map;
 #define TREX_NAME "_t-rex-64"
 
@@ -676,6 +677,30 @@ public:
     virtual void update_configuration(port_cfg_t * cfg);
 };
 
+class CTRexExtendedDriverBnxt : public CTRexExtendedDriverVirtBase {
+public:
+    CTRexExtendedDriverBnxt() {
+        m_cap = TREX_DRV_CAP_MAC_ADDR_CHG | TREX_DRV_CAP_DROP_Q;
+    }
+    static CTRexExtendedDriverBase * create(){
+        return ( new CTRexExtendedDriverBnxt() );
+    }
+
+    virtual void get_dpdk_drv_params(CTrexDpdkParams &p) {
+	    CTRexExtendedDriverBase::get_dpdk_drv_params(p);
+	    p.rx_drop_q_num = 0;
+            p.rx_desc_num_drop_q = RX_DESC_NUM_DATA_Q;
+	    p.rx_data_q_num = 4;
+	    //p.rx_mbuf_type = MBUF_9k;
+    }
+
+    virtual bool get_extended_stats(CPhyEthIF * _if,CPhyEthIFStats *stats) {
+        return get_extended_stats_fixed(_if, stats, 4, 4);
+    };
+
+    virtual void update_configuration(port_cfg_t * cfg);
+};
+
 #include <dlfcn.h>
 
 class CTRexExtendedDriverBaseNtAcc : public CTRexExtendedDriverBase {
@@ -824,6 +849,7 @@ private:
         register_driver(std::string("net_mlx5"),CTRexExtendedDriverBaseMlnx5G::create);
         register_driver(std::string("net_mlx4"),CTRexExtendedDriverMlnx4::create);
         register_driver(std::string("net_ntacc"), CTRexExtendedDriverBaseNtAcc::create);
+        register_driver(std::string("net_bnxt"), CTRexExtendedDriverBnxt::create);
 
 
         /* virtual devices */
@@ -968,6 +994,7 @@ enum {
        OPT_ASTF_CLIENT_MASK,
        OPT_ASTF_TUNABLE,
        OPT_NO_TERMIO,
+       OPT_BNXT_SO,
     
        /* no more pass this */
        OPT_MAX
@@ -1051,6 +1078,7 @@ static CSimpleOpt::SOption parser_options[] =
         { OPT_ASTF_CLIENT_MASK,       "--astf-client-mask",SO_REQ_SEP},
         { OPT_ASTF_TUNABLE,           "-t",SO_REQ_SEP},
         { OPT_NO_TERMIO,              "--no-termio", SO_NONE},
+        { OPT_BNXT_SO,                "--bnxt-so", SO_NONE    },
 
         SO_END_OF_OPTIONS
     };
@@ -1390,6 +1418,10 @@ static int parse_options(int argc, char *argv[], CParserOption* po, bool first_t
 
             case OPT_MLX4_SO:
                 po->preview.set_mlx4_so_mode(true);
+                break;
+
+            case OPT_BNXT_SO:
+                po->preview.set_bnxt_so_mode(true);
                 break;
 
             case OPT_LEARN :
@@ -2200,6 +2232,10 @@ void DpdkTRexPortAttr::dump_link(FILE *fd){
                 (m_link.link_duplex == ETH_LINK_FULL_DUPLEX) ?
                 ("full-duplex") : ("half-duplex\n"));
     } else {
+        fprintf(fd," link : Link Up - speed %u Mbps - %s\n",
+                (unsigned) m_link.link_speed,
+                (m_link.link_duplex == ETH_LINK_FULL_DUPLEX) ?
+                ("full-duplex") : ("half-duplex\n"));
         fprintf(fd," Link Down\n");
     }
     fprintf(fd,"promiscuous  : %d \n",get_promiscuous());
@@ -2215,6 +2251,8 @@ void DpdkTRexPortAttr::get_supported_speeds(supp_speeds_t &supp_speeds){
         supp_speeds.push_back(ETH_SPEED_NUM_1G);
     if (speed_capa & ETH_LINK_SPEED_10G)
         supp_speeds.push_back(ETH_SPEED_NUM_10G);
+    if (speed_capa & ETH_LINK_SPEED_25G)
+	    supp_speeds.push_back(ETH_SPEED_NUM_25G);
     if (speed_capa & ETH_LINK_SPEED_40G)
         supp_speeds.push_back(ETH_SPEED_NUM_40G);
     if (speed_capa & ETH_LINK_SPEED_100G)
@@ -4131,6 +4169,7 @@ bool CGlobalTRex::is_all_links_are_up(bool dump){
     for (i=0; i<m_max_ports; i++) {
         CPhyEthIF * _if=&m_ports[i];
         _if->get_port_attr()->update_link_status();
+	printf("Get Link Status\n");
         if ( dump ){
             _if->dump_stats(stdout);
         }
@@ -6474,6 +6513,12 @@ int  update_dpdk_args(void){
         SET_ARGS(g_mlx4_so_id_str);
     }
 
+    if ( lpp->get_bnxt_so_mode() ){
+        SET_ARGS("-d");
+        snprintf(g_bnxt_so_id_str, sizeof(g_bnxt_so_id_str), "libbnxt-64%s.so",g_image_postfix );
+        SET_ARGS(g_bnxt_so_id_str);
+    }
+
     SET_ARGS("-c");
     SET_ARGS(g_cores_str);
     SET_ARGS("-n");
@@ -7955,6 +8000,12 @@ void CTRexExtendedDriverMlnx4::update_configuration(port_cfg_t * cfg) {
     cfg->m_tx_conf.tx_thresh.wthresh = TX_WTHRESH;
 }
 
+
+void CTRexExtendedDriverBnxt::update_configuration(port_cfg_t * cfg) {
+    cfg->m_tx_conf.tx_thresh.pthresh = TX_PTHRESH;
+    cfg->m_tx_conf.tx_thresh.hthresh = TX_HTHRESH;
+    cfg->m_tx_conf.tx_thresh.wthresh = TX_WTHRESH;
+}
 
 
 /////////////////////////////////////////////////////////////////////
